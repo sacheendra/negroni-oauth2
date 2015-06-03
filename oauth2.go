@@ -290,9 +290,9 @@ func unmarshallToken(s sessions.Session) *token {
 }
 
 func extractPath(next string) string {
-	n, err := url.Parse(next)
+	/*n, err := url.Parse(next)
 	if err != nil {
 		return "/"
-	}
-	return n.Path
+	}*/
+	return next
 }
