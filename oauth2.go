@@ -60,7 +60,7 @@ type Tokens interface {
 	Valid() bool
 	ExpiryTime() time.Time
 	ExtraData(string) interface{}
-	Get() Token
+	Get() oauth2.Token
 }
 
 type Token oauth2.Token
@@ -104,38 +104,38 @@ func (t *token) String() string {
 }
 
 // Returns oauth2.Token.
-func (t *token) Get() Token {
-	return (Token)(t.Token)
+func (t *token) Get() oauth2.Token {
+	return t.Token
 }
 
 // Returns a new Google OAuth 2.0 backend endpoint.
-func Google(config *Config) negroni.Handler {
+func Google(config *Config) (negroni.HandlerFunc, *oauth2.Config) {
 	authUrl := "https://accounts.google.com/o/oauth2/auth"
 	tokenUrl := "https://accounts.google.com/o/oauth2/token"
 	return NewOAuth2Provider(config, authUrl, tokenUrl)
 }
 
 // Returns a new Github OAuth 2.0 backend endpoint.
-func Github(config *Config) negroni.Handler {
+func Github(config *Config) (negroni.HandlerFunc, *oauth2.Config) {
 	authUrl := "https://github.com/login/oauth/authorize"
 	tokenUrl := "https://github.com/login/oauth/access_token"
 	return NewOAuth2Provider(config, authUrl, tokenUrl)
 }
 
-func Facebook(config *Config) negroni.Handler {
+func Facebook(config *Config) (negroni.HandlerFunc, *oauth2.Config) {
 	authUrl := "https://www.facebook.com/dialog/oauth"
 	tokenUrl := "https://graph.facebook.com/oauth/access_token"
 	return NewOAuth2Provider(config, authUrl, tokenUrl)
 }
 
-func LinkedIn(config *Config) negroni.Handler {
+func LinkedIn(config *Config) (negroni.HandlerFunc, *oauth2.Config) {
 	authUrl := "https://www.linkedin.com/uas/oauth2/authorization"
 	tokenUrl := "https://www.linkedin.com/uas/oauth2/accessToken"
 	return NewOAuth2Provider(config, authUrl, tokenUrl)
 }
 
 // Returns a generic OAuth 2.0 backend endpoint.
-func NewOAuth2Provider(config *Config, authUrl, tokenUrl string) negroni.HandlerFunc {
+func NewOAuth2Provider(config *Config, authUrl, tokenUrl string) (negroni.HandlerFunc, *oauth2.Config) {
 	c := &oauth2.Config{
 		ClientID:     config.ClientID,
 		ClientSecret: config.ClientSecret,
@@ -165,7 +165,7 @@ func NewOAuth2Provider(config *Config, authUrl, tokenUrl string) negroni.Handler
 			next(w, r)
 		}
 
-	}
+	}, c
 }
 
 func GetToken(r *http.Request) Tokens {
