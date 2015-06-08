@@ -36,6 +36,7 @@ const (
 	keyToken     = "oauth2_token"
 	keyNextPage  = "next"
 	keyState     = "state"
+	keyProvider  = "provider"
 )
 
 var (
@@ -48,6 +49,8 @@ var (
 	PathCallback = "/oauth2callback"
 	// PathError sets the path to handle error cases.
 	PathError = "/oauth2error"
+	// the provider
+	Provider = "provider"
 )
 
 type Config oauth2.Config
@@ -234,6 +237,7 @@ func login(config *oauth2.Config, s sessions.Session, w http.ResponseWriter, r *
 		// store the next url and state token in the session
 		s.Set(keyState, state)
 		s.Set(keyNextPage, next)
+		s.Set(keyProvider, Provider)
 		http.Redirect(w, r, config.AuthCodeURL(state, oauth2.AccessTypeOffline), http.StatusFound)
 		return
 	}
