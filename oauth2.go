@@ -37,21 +37,119 @@ const (
 	keyNextPage  = "next"
 	keyState     = "state"
 	keyProvider  = "provider"
-)
 
-var (
 	// PathLogin sets the path to handle OAuth 2.0 logins.
-	PathLogin = "/login"
+	pathLogin = "/login"
 	// PathLogout sets to handle OAuth 2.0 logouts.
-	PathLogout = "/logout"
+	pathLogout = "/logout"
 	// PathCallback sets the path to handle callback from OAuth 2.0 backend
 	// to exchange credentials.
-	PathCallback = "/oauth2callback"
+	pathCallback = "/oauth2callback"
 	// PathError sets the path to handle error cases.
-	PathError = "/oauth2error"
+	pathError = "/oauth2error"
 	// the provider
-	Provider = "provider"
+	provider = "provider"
 )
+
+type Oauth2Handler struct {
+	Provider     string
+	PathLogin    string
+	PathLogout   string
+	PathCallback string
+	PathError    string
+	Config       *oauth2.Config
+}
+
+func (h *Oauth2Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	s := sessions.GetSession(r)
+
+	if r.Method == "GET" {
+		switch r.URL.Path {
+		case h.PathLogin:
+			h.login(s, w, r)
+		case h.PathLogout:
+			h.logout(s, w, r)
+		case h.PathCallback:
+			h.handleOAuth2Callback(s, w, r)
+		default:
+			next(w, r)
+		}
+	} else {
+		next(w, r)
+	}
+}
+
+func (h *Oauth2Handler) login(s sessions.Session, w http.ResponseWriter, r *http.Request) {
+	next := r.URL.Query().Get(keyNextPage)
+
+	if s.Get(keyToken) == nil {
+		// User is not logged in.
+		if next == "" {
+			next = "/"
+		}
+
+		state := newState()
+		// store the next url and state token in the session
+		s.Set(keyState, state)
+		s.Set(keyNextPage, next)
+		s.Set(keyProvider, h.Provider)
+		http.Redirect(w, r, h.Config.AuthCodeURL(state, oauth2.AccessTypeOffline), http.StatusFound)
+		return
+	}
+	// No need to login, redirect to the next page.
+	http.Redirect(w, r, next, http.StatusFound)
+}
+
+func (h *Oauth2Handler) logout(s sessions.Session, w http.ResponseWriter, r *http.Request) {
+	next := r.URL.Query().Get(keyNextPage)
+	s.Delete(keyToken)
+	http.Redirect(w, r, next, http.StatusFound)
+}
+
+func (h *Oauth2Handler) handleOAuth2Callback(s sessions.Session, w http.ResponseWriter, r *http.Request) {
+	providedState := r.URL.Query().Get("state")
+	fmt.Printf("Got state from request %s\n", providedState)
+
+	//verify that the provided state is the state we generated
+	//if it is not, then redirect to the error page
+	originalState := s.Get(keyState)
+	fmt.Printf("Got state from session %s\n", originalState)
+	if providedState != originalState {
+		http.Redirect(w, r, h.PathError, http.StatusFound)
+		return
+	}
+
+	next := s.Get(keyNextPage).(string)
+	fmt.Printf("Got a next page from the session: %s\n", next)
+	code := r.URL.Query().Get("code")
+	t, err := h.Config.Exchange(oauth2.NoContext, code)
+	if err != nil {
+		// Pass the error message, or allow dev to provide its own
+		// error handler.
+		http.Redirect(w, r, h.PathError, http.StatusFound)
+		return
+	}
+	// Store the credentials in the session.
+	val, _ := json.Marshal(t)
+	s.Set(keyToken, val)
+	http.Redirect(w, r, next, http.StatusFound)
+}
+
+// Handler that redirects user to the login page
+// if user is not logged in.
+func (h *Oauth2Handler) LoginRequired() negroni.HandlerFunc {
+	return func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		token := GetToken(r)
+		if token == nil || !token.Valid() {
+			// Set token to null to avoid redirection loop
+			SetToken(r, nil)
+			next := url.QueryEscape(r.URL.RequestURI())
+			http.Redirect(rw, r, h.PathLogin+"?"+keyNextPage+"="+next, http.StatusFound)
+		} else {
+			next(rw, r)
+		}
+	}
+}
 
 type Config oauth2.Config
 
@@ -65,8 +163,6 @@ type Tokens interface {
 	ExtraData(string) interface{}
 	Get() oauth2.Token
 }
-
-type Token oauth2.Token
 
 type token struct {
 	oauth2.Token
@@ -112,33 +208,33 @@ func (t *token) Get() oauth2.Token {
 }
 
 // Returns a new Google OAuth 2.0 backend endpoint.
-func Google(config *Config) (negroni.HandlerFunc, *oauth2.Config) {
+func Google(config *Config) negroni.Handler {
 	authUrl := "https://accounts.google.com/o/oauth2/auth"
 	tokenUrl := "https://accounts.google.com/o/oauth2/token"
 	return NewOAuth2Provider(config, authUrl, tokenUrl)
 }
 
 // Returns a new Github OAuth 2.0 backend endpoint.
-func Github(config *Config) (negroni.HandlerFunc, *oauth2.Config) {
+func Github(config *Config) negroni.Handler {
 	authUrl := "https://github.com/login/oauth/authorize"
 	tokenUrl := "https://github.com/login/oauth/access_token"
 	return NewOAuth2Provider(config, authUrl, tokenUrl)
 }
 
-func Facebook(config *Config) (negroni.HandlerFunc, *oauth2.Config) {
+func Facebook(config *Config) negroni.Handler {
 	authUrl := "https://www.facebook.com/dialog/oauth"
 	tokenUrl := "https://graph.facebook.com/oauth/access_token"
 	return NewOAuth2Provider(config, authUrl, tokenUrl)
 }
 
-func LinkedIn(config *Config) (negroni.HandlerFunc, *oauth2.Config) {
+func LinkedIn(config *Config) negroni.Handler {
 	authUrl := "https://www.linkedin.com/uas/oauth2/authorization"
 	tokenUrl := "https://www.linkedin.com/uas/oauth2/accessToken"
 	return NewOAuth2Provider(config, authUrl, tokenUrl)
 }
 
 // Returns a generic OAuth 2.0 backend endpoint.
-func NewOAuth2Provider(config *Config, authUrl, tokenUrl string) (negroni.HandlerFunc, *oauth2.Config) {
+func NewOAuth2Provider(config *Config, authUrl, tokenUrl string) negroni.Handler {
 	c := &oauth2.Config{
 		ClientID:     config.ClientID,
 		ClientSecret: config.ClientSecret,
@@ -150,25 +246,16 @@ func NewOAuth2Provider(config *Config, authUrl, tokenUrl string) (negroni.Handle
 		},
 	}
 
-	return func(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		s := sessions.GetSession(r)
+	h := &Oauth2Handler{
+		Provider:     provider,
+		PathLogin:    pathLogin,
+		PathLogout:   pathLogout,
+		PathCallback: pathCallback,
+		PathError:    pathError,
+		Config:       c,
+	}
 
-		if r.Method == "GET" {
-			switch r.URL.Path {
-			case PathLogin:
-				login(c, s, w, r)
-			case PathLogout:
-				logout(s, w, r)
-			case PathCallback:
-				handleOAuth2Callback(c, s, w, r)
-			default:
-				next(w, r)
-			}
-		} else {
-			next(w, r)
-		}
-
-	}, c
+	return h
 }
 
 func GetToken(r *http.Request) Tokens {
@@ -199,22 +286,6 @@ func SetToken(r *http.Request, t interface{}) {
 	}
 }
 
-// Handler that redirects user to the login page
-// if user is not logged in.
-func LoginRequired() negroni.HandlerFunc {
-	return func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		token := GetToken(r)
-		if token == nil || !token.Valid() {
-			// Set token to null to avoid redirection loop
-			SetToken(r, nil)
-			next := url.QueryEscape(r.URL.RequestURI())
-			http.Redirect(rw, r, PathLogin+"?"+keyNextPage+"="+next, http.StatusFound)
-		} else {
-			next(rw, r)
-		}
-	}
-}
-
 func newState() string {
 	var p [16]byte
 	_, err := rand.Read(p[:])
@@ -222,62 +293,6 @@ func newState() string {
 		panic(err)
 	}
 	return hex.EncodeToString(p[:])
-}
-
-func login(config *oauth2.Config, s sessions.Session, w http.ResponseWriter, r *http.Request) {
-	next := extractPath(r.URL.Query().Get(keyNextPage))
-
-	if s.Get(keyToken) == nil {
-		// User is not logged in.
-		if next == "" {
-			next = "/"
-		}
-
-		state := newState()
-		// store the next url and state token in the session
-		s.Set(keyState, state)
-		s.Set(keyNextPage, next)
-		s.Set(keyProvider, Provider)
-		http.Redirect(w, r, config.AuthCodeURL(state, oauth2.AccessTypeOffline), http.StatusFound)
-		return
-	}
-	// No need to login, redirect to the next page.
-	http.Redirect(w, r, next, http.StatusFound)
-}
-
-func logout(s sessions.Session, w http.ResponseWriter, r *http.Request) {
-	next := extractPath(r.URL.Query().Get(keyNextPage))
-	s.Delete(keyToken)
-	http.Redirect(w, r, next, http.StatusFound)
-}
-
-func handleOAuth2Callback(config *oauth2.Config, s sessions.Session, w http.ResponseWriter, r *http.Request) {
-	providedState := extractPath(r.URL.Query().Get("state"))
-	fmt.Printf("Got state from request %s\n", providedState)
-
-	//verify that the provided state is the state we generated
-	//if it is not, then redirect to the error page
-	originalState := s.Get(keyState)
-	fmt.Printf("Got state from session %s\n", originalState)
-	if providedState != originalState {
-		http.Redirect(w, r, PathError, http.StatusFound)
-		return
-	}
-
-	next := s.Get(keyNextPage).(string)
-	fmt.Printf("Got a next page from the session: %s\n", next)
-	code := r.URL.Query().Get("code")
-	t, err := config.Exchange(oauth2.NoContext, code)
-	if err != nil {
-		// Pass the error message, or allow dev to provide its own
-		// error handler.
-		http.Redirect(w, r, PathError, http.StatusFound)
-		return
-	}
-	// Store the credentials in the session.
-	val, _ := json.Marshal(t)
-	s.Set(keyToken, val)
-	http.Redirect(w, r, next, http.StatusFound)
 }
 
 func unmarshallToken(s sessions.Session) *token {
@@ -291,12 +306,4 @@ func unmarshallToken(s sessions.Session) *token {
 	json.Unmarshal(data, &tk)
 	return &token{tk}
 
-}
-
-func extractPath(next string) string {
-	/*n, err := url.Parse(next)
-	if err != nil {
-		return "/"
-	}*/
-	return next
 }
