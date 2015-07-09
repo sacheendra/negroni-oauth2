@@ -103,6 +103,7 @@ func (h *Oauth2Handler) login(s sessions.Session, w http.ResponseWriter, r *http
 func (h *Oauth2Handler) logout(s sessions.Session, w http.ResponseWriter, r *http.Request) {
 	next := r.URL.Query().Get(keyNextPage)
 	s.Delete(keyToken)
+	s.Delete("email")
 	http.Redirect(w, r, next, http.StatusFound)
 }
 
@@ -129,6 +130,7 @@ func (h *Oauth2Handler) handleOAuth2Callback(s sessions.Session, w http.Response
 		http.Redirect(w, r, h.PathError, http.StatusFound)
 		return
 	}
+
 	// Store the credentials in the session.
 	val, _ := json.Marshal(t)
 	s.Set(keyToken, val)
