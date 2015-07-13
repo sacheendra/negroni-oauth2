@@ -104,6 +104,7 @@ func (h *Oauth2Handler) logout(s sessions.Session, w http.ResponseWriter, r *htt
 	next := r.URL.Query().Get(keyNextPage)
 	s.Delete(keyToken)
 	s.Delete("email")
+	s.Delete("provider")
 	http.Redirect(w, r, next, http.StatusFound)
 }
 
