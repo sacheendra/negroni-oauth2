@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
 
 	"github.com/codegangsta/negroni"
 	sessions "github.com/goincremental/negroni-sessions"
@@ -58,6 +57,10 @@ type Oauth2Handler struct {
 	PathCallback string
 	PathError    string
 	Config       *oauth2.Config
+}
+
+type Token struct {
+	*oauth2.Token
 }
 
 func (h *Oauth2Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
@@ -104,7 +107,7 @@ func (h *Oauth2Handler) logout(s sessions.Session, w http.ResponseWriter, r *htt
 	next := r.URL.Query().Get(keyNextPage)
 	s.Delete(keyToken)
 	s.Delete("email")
-	s.Delete("provider")
+	s.Delete(keyProvider)
 	http.Redirect(w, r, next, http.StatusFound)
 }
 
@@ -155,60 +158,6 @@ func (h *Oauth2Handler) LoginRequired() negroni.HandlerFunc {
 }
 
 type Config oauth2.Config
-
-// Tokens Represents a container that contains
-// user's OAuth 2.0 access and refresh tokens.
-type Tokens interface {
-	Access() string
-	Refresh() string
-	Valid() bool
-	ExpiryTime() time.Time
-	ExtraData(string) interface{}
-	Get() oauth2.Token
-}
-
-type token struct {
-	oauth2.Token
-}
-
-func (t *token) ExtraData(key string) interface{} {
-	return t.Extra(key)
-}
-
-// Returns the access token.
-func (t *token) Access() string {
-	return t.AccessToken
-}
-
-// Returns the refresh token.
-func (t *token) Refresh() string {
-	return t.RefreshToken
-}
-
-// Returns whether the access token is
-// expired or not.
-func (t *token) Valid() bool {
-	if t == nil {
-		return true
-	}
-	return t.Token.Valid()
-}
-
-// Returns the expiry time of the user's
-// access token.
-func (t *token) ExpiryTime() time.Time {
-	return t.Expiry
-}
-
-// String returns the string representation of the token.
-func (t *token) String() string {
-	return fmt.Sprintf("tokens: %v", t)
-}
-
-// Returns oauth2.Token.
-func (t *token) Get() oauth2.Token {
-	return t.Token
-}
 
 // Returns a new Google OAuth 2.0 backend endpoint.
 func Google(config *Config) negroni.Handler {
@@ -261,7 +210,7 @@ func NewOAuth2Provider(config *Config, authUrl, tokenUrl string) negroni.Handler
 	return h
 }
 
-func GetToken(r *http.Request) Tokens {
+func GetToken(r *http.Request) *Token {
 	s := sessions.GetSession(r)
 	t := unmarshallToken(s)
 
@@ -282,8 +231,10 @@ func SetToken(r *http.Request, t interface{}) {
 	tk := unmarshallToken(s)
 	if tk != nil {
 		// check if the access token is expired
-		if !tk.Valid() && tk.Refresh() == "" {
+		if !tk.Valid() && tk.RefreshToken == "" {
 			s.Delete(keyToken)
+			s.Delete("email")
+			s.Delete(keyProvider)
 			tk = nil
 		}
 	}
@@ -298,7 +249,7 @@ func newState() string {
 	return hex.EncodeToString(p[:])
 }
 
-func unmarshallToken(s sessions.Session) *token {
+func unmarshallToken(s sessions.Session) *Token {
 
 	if s.Get(keyToken) == nil {
 		return nil
@@ -307,6 +258,6 @@ func unmarshallToken(s sessions.Session) *token {
 	data := s.Get(keyToken).([]byte)
 	var tk oauth2.Token
 	json.Unmarshal(data, &tk)
-	return &token{tk}
+	return &Token{&tk}
 
 }
