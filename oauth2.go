@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/codegangsta/negroni"
 	sessions "github.com/goincremental/negroni-sessions"
@@ -139,22 +138,6 @@ func (h *Oauth2Handler) handleOAuth2Callback(s sessions.Session, w http.Response
 	val, _ := json.Marshal(t)
 	s.Set(keyToken, val)
 	http.Redirect(w, r, next, http.StatusFound)
-}
-
-// Handler that redirects user to the login page
-// if user is not logged in.
-func (h *Oauth2Handler) LoginRequired() negroni.HandlerFunc {
-	return func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
-		token := GetToken(r)
-		if token == nil || !token.Valid() {
-			// Set token to null to avoid redirection loop
-			SetToken(r, nil)
-			next := url.QueryEscape(r.URL.RequestURI())
-			http.Redirect(rw, r, h.PathLogin+"?"+keyNextPage+"="+next, http.StatusFound)
-		} else {
-			next(rw, r)
-		}
-	}
 }
 
 type Config oauth2.Config

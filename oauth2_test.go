@@ -53,40 +53,6 @@ func Test_LoginRedirect(t *testing.T) {
 	}
 }
 
-func Test_LoginRedirectAfterLoginRequired(t *testing.T) {
-	recorder := httptest.NewRecorder()
-	n := negroni.New()
-	n.Use(sessions.Sessions("my_session", cookiestore.New([]byte("secret123"))))
-	n.Use(Google(&Config{
-		ClientID:     "client_id",
-		ClientSecret: "client_secret",
-		RedirectURL:  "refresh_url",
-		Scopes:       []string{"x", "y"},
-	}))
-
-	n.Use(LoginRequired())
-
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/login-required", func(w http.ResponseWriter, req *http.Request) {
-		t.Log("hi there")
-		fmt.Fprintf(w, "OK")
-	})
-
-	n.UseHandler(mux)
-
-	r, _ := http.NewRequest("GET", "/login-required?key=value", nil)
-	n.ServeHTTP(recorder, r)
-
-	location := recorder.HeaderMap["Location"][0]
-	if recorder.Code != 302 {
-		t.Errorf("Not being redirected to the auth page.")
-	}
-	if location != "/login?next=%2Flogin-required%3Fkey%3Dvalue" {
-		t.Errorf("Not being redirected to the right page, %v found", location)
-	}
-}
-
 func Test_Logout(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	s := cookiestore.New([]byte("secret123"))
@@ -155,30 +121,4 @@ func Test_LogoutOnAccessTokenExpiration(t *testing.T) {
 	index, _ := http.NewRequest("GET", "/", nil)
 	n.ServeHTTP(recorder, addtoken)
 	n.ServeHTTP(recorder, index)
-}
-
-func Test_LoginRequired(t *testing.T) {
-	recorder := httptest.NewRecorder()
-	n := negroni.Classic()
-	n.Use(sessions.Sessions("my_session", cookiestore.New([]byte("secret123"))))
-	n.Use(Google(&Config{
-		ClientID:     "foo",
-		ClientSecret: "foo",
-		RedirectURL:  "foo",
-	}))
-
-	n.Use(LoginRequired())
-
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
-		fmt.Fprintf(w, "OK")
-	})
-
-	n.UseHandler(mux)
-	r, _ := http.NewRequest("GET", "/", nil)
-	n.ServeHTTP(recorder, r)
-	if recorder.Code != 302 {
-		t.Errorf("Not being redirected to the auth page although user is not logged in. %d\n", recorder.Code)
-	}
 }
