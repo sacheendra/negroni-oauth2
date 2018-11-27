@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/codegangsta/negroni"
 	sessions "github.com/goincremental/negroni-sessions"
@@ -107,6 +108,18 @@ func (h *Oauth2Handler) logout(s sessions.Session, w http.ResponseWriter, r *htt
 	s.Delete(keyToken)
 	s.Delete("email")
 	s.Delete(keyProvider)
+
+	// expire the cookie
+	cookie := http.Cookie{
+		Name:    "accapi-session",
+		Value:   "",
+		Domain:  ".accapi.appbase.io",
+		Path:    "/",
+		MaxAge:  -1,
+		Expires: time.Now().Add(-1 * time.Hour),
+	}
+	http.SetCookie(w, &cookie)
+
 	http.Redirect(w, r, next, http.StatusFound)
 }
 
