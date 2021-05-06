@@ -1,4 +1,4 @@
-module github.com/siddharthlatest/oauth2
+module github.com/siddharthlatest/negroni-oauth2
 
 require (
 	github.com/codegangsta/negroni v1.0.0
